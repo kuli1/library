@@ -7,6 +7,7 @@
     3.2 [Project structure and architecture](#project-structure-and-architecture)    
     3.3 [Aggregates](#aggregates)  
     3.4 [Events](#events)  
+    3.4.1 [Events in Repositories](#events-in-repositories)   
     3.5 [ArchUnit](#archunit)  
     3.6 [Functional thinking](#functional-thinking)  
     3.7 [No ORM](#no-orm)  
@@ -30,7 +31,7 @@ Available books can be placed on hold only by one patron at any given point in t
 Books are either circulating or restricted, and can have retrieval or usage fees.
 A restricted book can only be held by a researcher patron. A regular patron is limited
 to five holds at any given moment, while a researcher patron is allowed an unlimited number
-of holds. An open-ended book hold is active until the patron collects the book, at which time it
+of holds. An open-ended book hold is active until the patron checks out the book, at which time it
 is completed. A closed-ended book hold that is not completed within a fixed number of 
 days after it was requested will expire. This check is done at the beginning of a day by 
 taking a look at daily sheet with expiring holds. Only a researcher patron can request
@@ -65,13 +66,15 @@ During the session we discovered following definitions:
 
 This made us think of real life scenarios that might happen. We discovered them described with the help of
 the **Example mapping**:  
-![Example mapping](docs/images/examplemapping.jpg)  
+![Example mapping](docs/images/example-mapping.png)  
 
 This in turn became the base for our *Design Level* sessions, where we analyzed each example:  
 ![Example mapping](docs/images/eventstorming-design-level.jpg)  
 
 Please follow the links below to get more details on each of the mentioned steps:
-- [Big Picture Event Storming](./docs/big-picture.md)
+- [Big Picture EventStorming](./docs/big-picture.md)
+- [Example Mapping](docs/example-mapping.md)
+- [Design Level EventStorming](docs/design-level.md)
 
 ### Project structure and architecture
 At the very beginning, not to overcomplicate the project, we decided to assign each bounded context
@@ -228,6 +231,45 @@ introducing **feature envy**, because other aggregates might start using those e
 they are not supposed to perform. A solution to this problem could be the distinction of domain events
 and integration events, which will be described here soon.  
 
+### Events in Repositories 
+Repositories are one of the most popoluar design pattern. They abstract our domain model from data layer. 
+In other words, they deal with state. That said, a common use-case is when we pass a new state to our repository,
+so that it gets persisted. It may look like so:
+
+```java
+public class BusinessService {
+   
+    private final PatronRepository patronRepository;
+    
+    void businessMethod(PatronId patronId) {
+        Patron patron = patronRepository.findById(patronId);
+        //do sth
+        patronRepository.save(patron);
+    }
+}
+```
+
+Conceptually, between 1st and 3rd line of that business method we change state of our Patron from A to B. 
+This change might be calculated by dirty checking or we might just override entire Patron state in the database. 
+Third option is _Let's make implicit explicit_ and actually call this state change A->B an **event**. 
+After all, event-driven architecture is all about promoting state changes as domain events.
+
+Thanks to this our domain model may become immutable and just return events as results of invocking a command like so:
+
+```java
+public BookPlacedOnHold placeOnHold(AvailableBook book) {
+      ...
+}
+```
+
+And our repository might operate directly on events like so:
+
+```java
+public interface PatronRepository {
+     void save(PatronEvent event) {
+}
+```
+
 ### ArchUnit
 
 One of the main components of a successful project is technical leadership that lets the team go in the right
@@ -319,7 +361,7 @@ class BookDatabaseRepository implements FindAvailableBook {
     
 #### Type system
 _Type system - like_ modelling - we modelled each domain object's state discovered during EventStorming as separate
-classes: `AvailableBook`, `BookOnHold`, `CollectedBook`. With this approach we provide much clearer abstraction than
+classes: `AvailableBook`, `BookOnHold`, `CheckedOutBook`. With this approach we provide much clearer abstraction than
 having a single `Book` class with an enum-based state management. Moving the logic to these specific classes brings
 Single Responsibility Principle to a different level. Moreover, instead of checking invariants in every business method
 we leave the role to the compiler. As an example, please consider following scenario: _you can place on hold only a book
